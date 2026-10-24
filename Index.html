@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KuppCheck HQ</title>
+<style>
+body{font-family:Arial;background:#0b1220;color:white;margin:0;padding:18px}
+h1{color:#80b5ff}
+button,input,select{font-size:16px;padding:12px;border-radius:9px;margin:5px;border:1px solid #5d7799}
+button{background:#3776cf;color:white}
+input,select{background:#17243a;color:white;max-width:90%}
+.panel{background:#19263b;padding:15px;border-radius:14px;margin-top:15px}
+.player{padding:10px;border-bottom:1px solid #42536c}
+small{color:#bac8dc}
+</style>
+</head>
+<body>
+<h1>🏈 KuppCheck HQ</h1>
+<p>Your fantasy football command center</p>
+<select id="league" onchange="show()">
+<option value="eight">8-Bench League</option>
+<option value="six">6-Bench League</option>
+</select>
+<div>
+<button onclick="tab='roster';show()">My Roster</button>
+<button onclick="tab='coach';show()">Lineup Coach</button>
+<button onclick="tab='waivers';show()">Waivers</button>
+<button onclick="tab='trades';show()">Trades</button>
+</div>
+<div id="view" class="panel"></div>
+<script>
+var defaults={
+eight:[["Brock Purdy","QB",22.23],["Chuba Hubbard","RB",14.41],["Aaron Jones","RB",12.23],["Justin Jefferson","WR",18.46],["Germie Bernard","WR",13.36],["Mark Andrews","TE",8.11],["Tre Tucker","WR",10.43],["49ers","D/ST",4.1],["Will Reichard","K",11.55],["Emanuel Wilson","RB",10.64],["Seattle Seahawks","D/ST",4.76]],
+six:[["Bryce Young","QB",43.15],["Christian McCaffrey","RB",20],["Josh Jacobs","RB",18],["Christian Watson","WR",12],["Garrett Wilson","WR",14],["George Kittle","TE",12],["Isaiah Likely","TE",10],["Zack Baun","IDP",10],["Minnesota Vikings","D/ST",7],["Ka'imi Fairbairn","K",9]]
+};
+var data;
+try{data=JSON.parse(localStorage.getItem('kuppcheck-data'))||defaults}catch(e){data=defaults}
+var tab='roster';
+function save(){localStorage.setItem('kuppcheck-data',JSON.stringify(data))}
+function safe(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function show(){
+var l=document.getElementById('league').value;
+var a=data[l],v=document.getElementById('view');
+if(tab==='roster'){
+v.innerHTML='<h2>My Roster</h2>'+a.map(function(p,i){return '<div class="player">'+safe(p[0])+' · '+safe(p[1])+' · '+p[2]+' pts <button onclick="edit('+i+')">Edit</button></div>'}).join('')+
+'<h2 id="formtitle">Add Player</h2><input id="name" placeholder="Player name"><select id="position"><option>QB</option><option>RB</option><option>WR</option><option>TE</option><option>D/ST</option><option>K</option><option>IDP</option></select><input id="points" type="number" placeholder="Projected points"><input id="editindex" type="hidden" value="-1"><p><button onclick="add()">Save Player</button></p>';
+}else if(tab==='coach'){
+var order=['QB','RB','RB','WR','WR','TE','FLEX','D/ST','K'];
+if(l==='six')order.push('IDP');
+var used=[];
+v.innerHTML='<h2>Suggested Lineup</h2><small>Based on manually entered projections.</small>'+order.map(function(pos){
+var options=a.map(function(p,i){return {p:p,i:i}}).filter(function(x){return !used.includes(x.i)&&(pos==='FLEX'?['RB','WR','TE'].includes(x.p[1]):x.p[1]===pos)}).sort(function(x,y){return y.p[2]-x.p[2]});
+var x=options[0];if(x)used.push(x.i);
+return '<div class="player">'+pos+': '+(x?safe(x.p[0])+' ('+x.p[2]+' pts)':'No player')+'</div>';
+}).join('');
+}else if(tab==='waivers'){
+v.innerHTML='<h2>Waiver Watch</h2><p>Bam Knight · Tyrone Tracy Jr. · Keenan Allen</p><small>Examples only. Not connected to ESPN.</small>';
+}else{
+v.innerHTML='<h2>Trade Desk</h2><p>Trade analysis coming next.</p><small>No ESPN connection yet.</small>';
+}}
+function edit(i){
+var p=data[document.getElementById('league').value][i];
+document.getElementById('name').value=p[0];
+document.getElementById('position').value=p[1];
+document.getElementById('points').value=p[2];
+document.getElementById('editindex').value=i;
+document.getElementById('formtitle').textContent='Edit Player';
+}
+function add(){
+var name=document.getElementById('name').value.trim();
+if(!name){alert('Enter a player name');return}
+var l=document.getElementById('league').value;
+var p=[name,document.getElementById('position').value,Number(document.getElementById('points').value)||0];
+var i=Number(document.getElementById('editindex').value);
+if(i>=0)data[l][i]=p;else data[l].push(p);
+save();show();
+}
+show();
+</script>
+</body>
+</html>
