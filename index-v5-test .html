@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KuppCheck HQ</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:system-ui,-apple-system,Arial,sans-serif;background:#0b1220;color:#f4f7fc;margin:0;padding:16px;line-height:1.45}
+main{max-width:850px;margin:auto}h1{color:#8bb5ff;font-size:clamp(30px,6vw,44px);margin:12px 0 2px}h2{margin:0 0 12px}h3{margin:18px 0 8px}p{margin:8px 0 14px}.muted,small{color:#b8c8dd}.note{border-left:4px solid #e5b45b;padding:12px;background:#242a39;border-radius:8px;margin:14px 0}
+button,input,select,textarea{font:inherit;border-radius:10px;padding:11px;border:1px solid #667e9d;min-height:44px}
+button{background:#4277ca;color:#fff;cursor:pointer}button.secondary{background:#233650}button.danger{background:#71333b}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #ffcc66}
+select,input{background:#17243a;color:white;max-width:100%}.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0}.toolbar select{flex:1;min-width:200px}
+nav{display:flex;gap:7px;flex-wrap:wrap}nav button.active{background:#84b0f6;color:#0b1220;font-weight:750}
+.panel{background:#1a273c;padding:16px;border-radius:14px;margin:16px 0}.player{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid #43546d;padding:12px 0}.player:last-child{border-bottom:0}
+.player .details{min-width:0;flex:1}.player strong{display:block}.player small{display:block}.player button{flex-shrink:0}.tag{font-size:12px;padding:2px 7px;border-radius:6px;background:#354965;margin-right:5px}.status{color:#ffd184}
+.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.formgrid label{display:flex;flex-direction:column;gap:5px;font-size:14px}.formgrid input,.formgrid select{width:100%}
+@media(max-width:540px){.formgrid{grid-template-columns:1fr}.player button{padding:8px}.panel{padding:12px}}
+</style></head><body><main>
+<h1>🏈 KuppCheck HQ</h1><p>Your fantasy football command center</p>
+<div class="note"><strong>Version 5 TEST — source diagnostics and evidence timeline (rosters remain snapshots).</strong> These rosters were entered from your ESPN screenshots, not synced live. Injury statuses and projections may change. Always verify with ESPN before setting a lineup.</div>
+<div class="toolbar"><label for="league">League</label><select id="league"><option value="eight">Short Stack Cup · 8-bench</option><option value="six">Mutant football · 6-bench</option></select></div>
+<nav aria-label="App sections"><button data-tab="roster" class="active">My Roster</button><button data-tab="coach">Lineup Coach</button><button data-tab="waivers">Waivers</button><button data-tab="trades">Trades</button><button data-tab="injuries">🧠💨 Injury Intel</button></nav>
+<div id="view" class="panel" aria-live="polite"></div>
+<p class="muted"><small>Data is saved on this device only. Clearing website data or changing browsers can remove edits. No ESPN password or private cookies are required.</small></p>
+</main><script>
+"use strict";
+const seed={
+eight:[
+["Brock Purdy","QB",22.24,"starter"],["Chuba Hubbard","RB",14.41,"starter"],["Aaron Jones Sr.","RB",12.23,"starter"],["Germie Bernard","WR",8.69,"starter"],["Justin Jefferson","WR",18.46,"starter"],["Mark Andrews","TE",8.11,"starter"],["Tre Tucker","WR",10.43,"starter"],["49ers D/ST","D/ST",4.11,"starter"],["Will Reichard","K",11.55,"starter"],
+["Stefon Diggs","WR",null,"bench","BYE"],["Mike Evans","WR",0,"bench","OUT"],["Hunter Henry","TE",8.15,"bench"],["Deebo Samuel Sr.","WR",0,"bench","OUT"],["Cam Skattebo","RB",7.73,"bench"],["Tyler Warren","TE",0,"bench","OUT"],["Emanuel Wilson","RB",10.64,"bench"],["Seahawks D/ST","D/ST",4.76,"bench"],["Davante Adams","WR",0,"IR","IR"],["Tyreek Hill","WR",null,"IR","QUESTIONABLE"]],
+six:[
+["Bryce Young","QB",43.15,"starter"],["Josh Jacobs","RB",12.14,"starter","DTD"],["Christian McCaffrey","RB",21.58,"starter"],["Christian Watson","WR",16.13,"starter"],["Garrett Wilson","WR",14.64,"starter"],["George Kittle","TE",16.69,"starter"],["Isaiah Likely","TE",14.25,"starter"],["Azeez Al-Shaair","IDP",20.82,"starter"],["Vikings D/ST","D/ST",7.78,"starter"],["Ka'imi Fairbairn","K",9.19,"starter"],
+["Jordan Addison","WR",10.43,"bench"],["Zack Baun","IDP",20.46,"bench"],["James Cook III","RB",null,"bench","BYE"],["Tyreek Hill","WR",null,"bench","QUESTIONABLE"],["Alvin Kamara","RB",7.26,"bench","LOCKED"],["Kendre Miller","RB",8.73,"bench","LOCKED"],["Deebo Samuel Sr.","WR",0,"IR","OUT"]]
+};
+const KEY="kuppcheck-v2";
+const INTEL_KEY="kuppcheck-injury-intel-v1";
+const INJURY_URL="https://site.api.espn.com/apis/site/v2/sports/football/nfl/injuries";
+let liveInjuries=[],liveError="",liveUpdated="",liveLoading=false;
+
+const V5_SOURCES=[
+ {name:"ESPN NFL injuries",type:"connected",url:INJURY_URL,detail:"Existing experimental injury feed; test with Load Live Injuries."},
+ {name:"NFL official injury reports",type:"not connected",url:"https://www.nfl.com/injuries/",detail:"Official public reports; automated structured access still needs verification."},
+ {name:"FantasyPros",type:"access to verify",url:"https://www.fantasypros.com/api-data/",detail:"API permissions, credentials and available injury fields not verified."},
+ {name:"Live game injury / return events",type:"feed needed",url:"https://www.espn.com/nfl/",detail:"Need a permitted timestamped game-event feed that actually reports exits and returns."},
+ {name:"Adam Schefter reports",type:"feed needed",url:"https://www.espn.com/nfl/",detail:"Need an authorized, timely news source; no social scraping enabled."}
+];
+const EVENTS_KEY="kuppcheck-v5-events-v1";
+let v5Events=[];try{v5Events=JSON.parse(localStorage.getItem(EVENTS_KEY))||[]}catch(e){}
+function v5Sources(){return `<div class="note"><h3>🧪 Version 5 source checks</h3><p>One working ESPN experiment; four candidates awaiting integration. Links are references, not live connections.</p>${V5_SOURCES.map(x=>`<div class="player"><div class="details"><strong>${esc(x.name)}</strong><small>${esc(x.name.startsWith("ESPN")?(liveError?"ESPN fetch failed":liveUpdated?"ESPN fetched at "+liveUpdated:"ESPN not tested this session"):x.type)}</small><small>${esc(x.detail)}</small><small><a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer" style="color:#a7caff">Source / access information</a></small></div></div>`).join("")}<p><small>Fetch time ≠ report publication time. No source is marked connected merely because its webpage opens.</small></p></div>`}
+function v5Timeline(name){let matches=v5Events.filter(e=>e.player.toLowerCase()===name.toLowerCase()).sort((a,b)=>b.time.localeCompare(a.time));return `<div class="note"><h3>Player event timeline — ${esc(name)}</h3><p>Manually verified reports only; does not change official designations.</p>${matches.length?matches.map(e=>`<div class="player"><div class="details"><strong>${esc(e.event)}</strong><small>${esc(e.time)} · ${esc(e.source)}</small>${e.url?`<small><a href="${esc(e.url)}" target="_blank" rel="noopener noreferrer" style="color:#a7caff">View evidence</a></small>`:""}</div></div>`).join(""):"<p>No recorded events for this player.</p>"}<div class="formgrid"><label>Event<select id="v5event"><option>Left game / injury reported</option><option>Questionable to return</option><option>Returned to game</option><option>Ruled out</option><option>Other verified update</option></select></label><label>Source name<input id="v5source" placeholder="e.g. ESPN app alert"></label><label>Source URL (optional)<input id="v5url" type="url" placeholder="https://..."></label><label>Event date/time<input id="v5time" type="datetime-local"></label></div><div class="toolbar"><button id="v5save">Add sourced event</button><button id="v5clear" class="secondary">Clear player timeline</button></div><small>Entries are user-supplied evidence, not automatically verified or live updates.</small></div>`}
+
+function injuryEntries(data){
+ const out=[],seen=new Set();
+ function walk(x,depth){
+  if(!x||typeof x!=="object"||depth>12)return;
+  if(Array.isArray(x)){x.forEach(y=>walk(y,depth+1));return;}
+  const person=x.athlete||x.player;
+  const name=person&&(person.displayName||person.fullName||person.name);
+  const st=x.status;
+  const status=typeof st==="string"?st:(st?.description||st?.name||st?.type?.description||st?.type?.name||"Reported");
+  if(name&&(x.status||x.type||x.details||x.injuries)&&!seen.has(name.toLowerCase())){
+   seen.add(name.toLowerCase());out.push({name,status,detail:typeof x.details==="string"?x.details:(x.details?.detail||x.details?.description||x.type?.description||"")});
+  }
+  for(const [k,v] of Object.entries(x))if(!["athlete","player","links"].includes(k))walk(v,depth+1);
+ }
+ walk(data,0);return out;
+}
+async function loadLiveInjuries(){
+ liveLoading=true;liveError="";render();
+ try{
+  const response=await fetch(INJURY_URL,{cache:"no-store"});
+  if(!response.ok)throw Error("HTTP "+response.status);
+  const entries=injuryEntries(await response.json());
+  if(!entries.length)throw Error("No recognizable player injury entries");
+  liveInjuries=entries;liveUpdated=new Date().toLocaleString();
+ }catch(e){liveError="Unable to read ESPN injury feed: "+(e?.message||"network error")+". The browser may block access or ESPN may have changed the feed."}
+ finally{liveLoading=false;render()}
+}
+
+let intel={};try{intel=JSON.parse(localStorage.getItem(INTEL_KEY))||{}}catch(e){intel={}}
+function saveIntel(){try{localStorage.setItem(INTEL_KEY,JSON.stringify(intel))}catch(e){alert("Could not save scouting notes.")}}
+function intelKey(league,name){return league+"|"+name.toLowerCase().trim()}
+function getIntel(league,name){return intel[intelKey(league,name)]||{}}
+function safeDate(d){return d?new Date(d+"T12:00:00").toLocaleDateString():"Not entered"}
+function evidenceAssessment(d){
+ const statuses=[d.wed,d.thu,d.fri].filter(Boolean);
+ const last=statuses[statuses.length-1]||"unknown";
+ const flag=(d.designation||"").toUpperCase();
+ if(flag==="OUT"||flag==="IR")return ["Do not start","Official designation entered as OUT/IR. Verify it remains current."];
+ if(flag==="DOUBTFUL")return ["High availability risk","Doubtful designation recorded. Check final game status."];
+ if(d.newInjury==="yes"&&last==="DNP")return ["Elevated availability risk","New injury and latest recorded practice was DNP. No reliable numerical probability yet."];
+ if(last==="full"&&d.workload==="normal")return ["Encouraging evidence","Full practice and normal workload expectation recorded. Still verify official status."];
+ if(last==="DNP")return ["Needs monitoring","Latest practice recorded as DNP. Rest and injury absences have different meanings."];
+ if(last==="limited")return ["Workload uncertain","Latest practice was limited. Game availability does not guarantee normal usage."];
+ return ["Insufficient evidence","Add dated practice reports, official designation and source-backed comments."];
+}
+
+let db;
+try{db=JSON.parse(localStorage.getItem(KEY))||structuredClone(seed)}catch(e){db=JSON.parse(JSON.stringify(seed))}
+for(const l of ["eight","six"])if(!Array.isArray(db[l]))db[l]=JSON.parse(JSON.stringify(seed[l]));
+let tab="roster",editIndex=-1;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt=n=>n===null||n===undefined?"—":Number(n).toFixed(2);
+function save(){try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){alert("Could not save on this device.")}}
+function render(){
+const league=$("league").value, a=db[league], v=$("view");
+document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));
+if(tab==="roster"){
+let out="<h2>My Roster</h2><p class='muted'>Snapshot from screenshots. Use Edit to correct a player, position, or projection.</p>";
+for(const [slot,title] of [["starter","Starters"],["bench","Bench"],["IR","Injured reserve"]]){
+out+="<h3>"+title+"</h3>";
+const players=a.map((p,i)=>({p,i})).filter(x=>x.p[3]===slot);
+out+=players.length?players.map(({p,i})=>`<div class="player"><div class="details"><strong>${esc(p[0])}</strong><small><span class="tag">${esc(p[1])}</span> ${fmt(p[2])} projected pts ${p[4]?`<span class="status">· ${esc(p[4])}</span>`:""}</small></div><button data-edit="${i}">Edit</button></div>`).join(""):"<p class='muted'>No players listed.</p>";
+}
+out+=`<h3 id="formtitle">Add player</h3><div class="formgrid">
+<label>Name<input id="pname" placeholder="Player name"></label>
+<label>Position<select id="ppos">${["QB","RB","WR","TE","D/ST","K","IDP"].map(x=>`<option>${x}</option>`).join("")}</select></label>
+<label>Projected points (blank if unknown)<input id="ppoints" type="number" step=".01" placeholder="Unknown"></label>
+<label>Roster group<select id="pgroup"><option value="starter">Starter</option><option value="bench">Bench</option><option value="IR">IR</option></select></label>
+<label>Status (optional)<input id="pstatus" placeholder="e.g. OUT, BYE"></label></div>
+<div class="toolbar"><button id="saveplayer">Save player</button><button id="canceledit" class="secondary" hidden>Cancel edit</button><button id="deleteplayer" class="danger" hidden>Delete player</button></div>`;
+v.innerHTML=out;
+v.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>editPlayer(Number(b.dataset.edit))));
+$("saveplayer").onclick=savePlayer;$("canceledit").onclick=()=>{editIndex=-1;render()};$("deleteplayer").onclick=deletePlayer;
+}else if(tab==="coach"){
+const order=["QB","RB","RB","WR","WR","TE","FLEX","D/ST","K",...(league==="six"?["IDP"]:[])];
+let used=new Set(),results=[];
+for(const pos of order){
+const candidates=a.map((p,i)=>({p,i})).filter(({p,i})=>!(["OUT","IR"].includes((getIntel(league,p[0]).designation||"").toUpperCase()))&&!used.has(i)&&p[3]!=="IR"&&p[2]!==null&&!["OUT","BYE","IR"].includes((p[4]||"").toUpperCase())&&(pos==="FLEX"?["RB","WR","TE"].includes(p[1]):p[1]===pos)).sort((x,y)=>y.p[2]-x.p[2]);
+const pick=candidates[0];if(pick)used.add(pick.i);results.push([pos,pick?.p]);
+}
+v.innerHTML="<h2>Lineup Coach — preliminary</h2><div class='note'>Projection-only suggestions with manually recorded OUT/IR exclusions, not an optimized or live recommendation. The tool cannot check injury updates, locked players, league-specific scoring, or whether ESPN has accepted a lineup change.</div>"+results.map(([pos,p])=>`<div class="player"><div class="details"><strong>${esc(pos)}: ${p?esc(p[0]):"No eligible player"}</strong><small>${p?fmt(p[2])+" projected pts"+(p[4]?" · "+esc(p[4]):""):""}</small></div></div>`).join("")+"<p class='muted'>A real coaching model with independent projections, availability checks, and lineup optimization is a future step.</p>";
+}else if(tab==="injuries"){
+ const names=[...new Set(a.filter(p=>p[1]!=="D/ST"&&p[1]!=="K").map(p=>p[0]))].sort();
+ const selected=window.selectedIntelPlayer&&names.includes(window.selectedIntelPlayer)?window.selectedIntelPlayer:names[0];
+ window.selectedIntelPlayer=selected;
+ const d=getIntel(league,selected||"");const [verdict,reason]=evidenceAssessment(d);
+ const options=(values,current)=>values.map(([val,label])=>`<option value="${esc(val)}" ${val===(current||"")?"selected":""}>${esc(label)}</option>`).join("");
+ const practice=(day)=>`<label>${day} practice<select id="i${day}">${options([["","Unknown"],["DNP","Did not practice"],["limited","Limited"],["full","Full"],["rest","Rest / veteran day"]],d[day.toLowerCase()])}</select></label>`;
+ const rosterMatches=liveInjuries.filter(x=>names.some(n=>n.toLowerCase()===x.name.toLowerCase()));
+ const liveSection=`<div class="note"><strong>ESPN Injury Feed — experimental</strong><p>Click to fetch injury reports. This unofficial feed may be incomplete or stale. It does not overwrite your manual notes.</p><button id="loadinjuries" ${liveLoading?"disabled":""}>${liveLoading?"Loading…":"Load Live Injuries"}</button>${liveUpdated?`<p><small>Last fetched: ${esc(liveUpdated)} · ${liveInjuries.length} entries</small></p><h3>Players on your roster (${rosterMatches.length})</h3>${rosterMatches.length?rosterMatches.map(x=>`<div class="player"><div class="details"><strong>${esc(x.name)}</strong><small>${esc(x.status)} · ${esc(x.detail||"No further detail")}</small></div></div>`).join(""):"<p>No exact name matches. This does not mean everyone else is healthy.</p>"}<details><summary>Show all injury entries</summary>${liveInjuries.slice(0,200).map(x=>`<p>${esc(x.name)} — ${esc(x.status)}</p>`).join("")}</details>`:""}${liveError?`<p class="status">${esc(liveError)}</p>`:""}<p><small>Source: ESPN NFL injury feed. Verify against official team/NFL reports before making lineup decisions.</small></p></div>`;
+ v.innerHTML=`<h2>🧠💨 The Farting Brain — Injury Intel</h2>${v5Sources()}${liveSection}${v5Timeline(selected)}<div class="note"><strong>Manual scouting notebook.</strong> Fields below remain user-entered. The assessment is a rule-based signal, NOT a calibrated playing probability. Check dates and sources.</div>
+ <label for="intelplayer">Player</label><select id="intelplayer" style="width:100%;margin:8px 0 16px">${names.map(n=>`<option ${n===selected?"selected":""}>${esc(n)}</option>`).join("")}</select>
+ <div class="formgrid"><label>Report date<input type="date" id="idate" value="${esc(d.date||"")}"></label>
+ <label>Official designation<select id="idesignation">${options([["","Not verified"],["HEALTHY","No designation"],["QUESTIONABLE","Questionable"],["DOUBTFUL","Doubtful"],["OUT","Out"],["IR","Injured reserve"]],d.designation)}</select></label>
+ ${practice("Wed")}${practice("Thu")}${practice("Fri")}
+ <label>New injury this week?<select id="inew">${options([["","Unknown"],["yes","Yes"],["no","No"]],d.newInjury)}</select></label>
+ <label>Expected workload<select id="iworkload">${options([["","Unknown"],["normal","Normal expected"],["limited","May be limited"],["unknown","Unclear"]],d.workload)}</select></label>
+ <label>Practice absence reason<select id="ireason">${options([["","Not established"],["rest","Reported veteran rest"],["injury","Reported injury"],["other","Other / unclear"]],d.reason)}</select></label></div>
+ <h3>Coach comments and evidence</h3><label for="icoach">What did the coach actually say? (quote or your notes)</label><textarea id="icoach" rows="3" style="width:100%;background:#17243a;color:white;border:1px solid #667e9d;border-radius:10px;padding:10px">${esc(d.coach||"")}</textarea>
+ <div class="formgrid"><label>Source / link<input id="isource" placeholder="Official team report, article URL..." value="${esc(d.source||"")}"></label><label>Source date<input type="date" id="isourcedate" value="${esc(d.sourceDate||"")}"></label></div>
+ <div class="toolbar"><button id="saveintel">Save scouting report</button><button id="clearintel" class="secondary">Clear this report</button></div>
+ <div class="note"><strong>Farting Brain assessment: ${esc(verdict)}</strong><p>${esc(reason)}</p><small>Last recorded report: ${esc(safeDate(d.date))}. ${d.workload==="limited"?"A player can be active but have a reduced workload.":"Availability and workload are separate questions."}</small></div>
+ <p class="muted">Next phase: connect verified data feeds, timestamps, opponent-specific matchups and measured probabilities. No fabricated 98% confidence scores.</p>`;
+ $("loadinjuries").onclick=loadLiveInjuries;
+ $("v5save").onclick=()=>{const source=$("v5source").value.trim(),time=$("v5time").value,url=$("v5url").value.trim();if(!source||!time){alert("Enter a source and event date/time.");return}if(url&&!/^https?:\/\//i.test(url)){alert("Source link must start with https:// or http://");return}v5Events.push({player:selected,event:$("v5event").value,source,time,url});try{localStorage.setItem(EVENTS_KEY,JSON.stringify(v5Events))}catch(e){alert("Could not save event on this device.")}render()};
+ $("v5clear").onclick=()=>{if(confirm("Clear timeline for "+selected+"?")){v5Events=v5Events.filter(e=>e.player.toLowerCase()!==selected.toLowerCase());localStorage.setItem(EVENTS_KEY,JSON.stringify(v5Events));render()}};
+
+ $("intelplayer").onchange=e=>{window.selectedIntelPlayer=e.target.value;render()};
+ $("saveintel").onclick=()=>{
+ const v=id=>$(id).value;
+ intel[intelKey(league,selected)]={date:v("idate"),designation:v("idesignation"),wed:v("iWed"),thu:v("iThu"),fri:v("iFri"),newInjury:v("inew"),workload:v("iworkload"),reason:v("ireason"),coach:v("icoach").trim(),source:v("isource").trim(),sourceDate:v("isourcedate")};saveIntel();render();alert("Scouting report saved on this device.")};
+ $("clearintel").onclick=()=>{if(confirm("Clear this player's scouting report?")){delete intel[intelKey(league,selected)];saveIntel();render()}};
+ }else if(tab==="waivers"){
+v.innerHTML="<h2>Waiver Watch</h2><div class='note'>Not connected to your ESPN free-agent pool. No fabricated waiver recommendations.</div><p>Next build: pull eligible free agents for the selected league, compare expected value, and identify who to drop.</p>";
+}else{
+v.innerHTML="<h2>Trade Desk</h2><div class='note'>Trade analysis is not live yet.</div><p>Next build: compare rest-of-season value, roster needs, league scoring, and injury risk before recommending a trade.</p>";
+}}
+function editPlayer(i){
+editIndex=i;const p=db[$("league").value][i];$("pname").value=p[0];$("ppos").value=p[1];$("ppoints").value=p[2]??"";$("pgroup").value=p[3];$("pstatus").value=p[4]||"";$("formtitle").textContent="Edit player";$("canceledit").hidden=false;$("deleteplayer").hidden=false;$("formtitle").scrollIntoView({behavior:"smooth"});
+}
+function savePlayer(){
+const name=$("pname").value.trim(),raw=$("ppoints").value.trim();if(!name){alert("Enter a player name.");return}
+const p=[name,$("ppos").value,raw===""?null:Number(raw),$("pgroup").value,$("pstatus").value.trim()];
+const a=db[$("league").value];if(editIndex>=0)a[editIndex]=p;else a.push(p);editIndex=-1;save();render();
+}
+function deletePlayer(){if(editIndex<0)return;if(!confirm("Delete this player from this device?"))return;db[$("league").value].splice(editIndex,1);editIndex=-1;save();render()}
+$("league").onchange=()=>{editIndex=-1;window.selectedIntelPlayer=null;render()};
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;editIndex=-1;render()});
+render();
+</script></body></html>
