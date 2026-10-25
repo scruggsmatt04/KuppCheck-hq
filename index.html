@@ -4,7 +4,7 @@
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{font-family:system-ui,-apple-system,Arial,sans-serif;background:#0b1220;color:#f4f7fc;margin:0;padding:16px;line-height:1.45}
 main{max-width:850px;margin:auto}h1{color:#8bb5ff;font-size:clamp(30px,6vw,44px);margin:12px 0 2px}h2{margin:0 0 12px}h3{margin:18px 0 8px}p{margin:8px 0 14px}.muted,small{color:#b8c8dd}.note{border-left:4px solid #e5b45b;padding:12px;background:#242a39;border-radius:8px;margin:14px 0}
-button,input,select{font:inherit;border-radius:10px;padding:11px;border:1px solid #667e9d;min-height:44px}
+button,input,select,textarea{font:inherit;border-radius:10px;padding:11px;border:1px solid #667e9d;min-height:44px}
 button{background:#4277ca;color:#fff;cursor:pointer}button.secondary{background:#233650}button.danger{background:#71333b}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #ffcc66}
 select,input{background:#17243a;color:white;max-width:100%}.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0}.toolbar select{flex:1;min-width:200px}
 nav{display:flex;gap:7px;flex-wrap:wrap}nav button.active{background:#84b0f6;color:#0b1220;font-weight:750}
@@ -14,9 +14,9 @@ nav{display:flex;gap:7px;flex-wrap:wrap}nav button.active{background:#84b0f6;col
 @media(max-width:540px){.formgrid{grid-template-columns:1fr}.player button{padding:8px}.panel{padding:12px}}
 </style></head><body><main>
 <h1>🏈 KuppCheck HQ</h1><p>Your fantasy football command center</p>
-<div class="note"><strong>Version 2 — snapshot mode.</strong> These rosters were entered from your ESPN screenshots, not synced live. Injury statuses and projections may change. Always verify with ESPN before setting a lineup.</div>
+<div class="note"><strong>Version 3 — scouting notebook (snapshot mode).</strong> These rosters were entered from your ESPN screenshots, not synced live. Injury statuses and projections may change. Always verify with ESPN before setting a lineup.</div>
 <div class="toolbar"><label for="league">League</label><select id="league"><option value="eight">Short Stack Cup · 8-bench</option><option value="six">Mutant football · 6-bench</option></select></div>
-<nav aria-label="App sections"><button data-tab="roster" class="active">My Roster</button><button data-tab="coach">Lineup Coach</button><button data-tab="waivers">Waivers</button><button data-tab="trades">Trades</button></nav>
+<nav aria-label="App sections"><button data-tab="roster" class="active">My Roster</button><button data-tab="coach">Lineup Coach</button><button data-tab="waivers">Waivers</button><button data-tab="trades">Trades</button><button data-tab="injuries">🧠💨 Injury Intel</button></nav>
 <div id="view" class="panel" aria-live="polite"></div>
 <p class="muted"><small>Data is saved on this device only. Clearing website data or changing browsers can remove edits. No ESPN password or private cookies are required.</small></p>
 </main><script>
@@ -30,6 +30,25 @@ six:[
 ["Jordan Addison","WR",10.43,"bench"],["Zack Baun","IDP",20.46,"bench"],["James Cook III","RB",null,"bench","BYE"],["Tyreek Hill","WR",null,"bench","QUESTIONABLE"],["Alvin Kamara","RB",7.26,"bench","LOCKED"],["Kendre Miller","RB",8.73,"bench","LOCKED"],["Deebo Samuel Sr.","WR",0,"IR","OUT"]]
 };
 const KEY="kuppcheck-v2";
+const INTEL_KEY="kuppcheck-injury-intel-v1";
+let intel={};try{intel=JSON.parse(localStorage.getItem(INTEL_KEY))||{}}catch(e){intel={}}
+function saveIntel(){try{localStorage.setItem(INTEL_KEY,JSON.stringify(intel))}catch(e){alert("Could not save scouting notes.")}}
+function intelKey(league,name){return league+"|"+name.toLowerCase().trim()}
+function getIntel(league,name){return intel[intelKey(league,name)]||{}}
+function safeDate(d){return d?new Date(d+"T12:00:00").toLocaleDateString():"Not entered"}
+function evidenceAssessment(d){
+ const statuses=[d.wed,d.thu,d.fri].filter(Boolean);
+ const last=statuses[statuses.length-1]||"unknown";
+ const flag=(d.designation||"").toUpperCase();
+ if(flag==="OUT"||flag==="IR")return ["Do not start","Official designation entered as OUT/IR. Verify it remains current."];
+ if(flag==="DOUBTFUL")return ["High availability risk","Doubtful designation recorded. Check final game status."];
+ if(d.newInjury==="yes"&&last==="DNP")return ["Elevated availability risk","New injury and latest recorded practice was DNP. No reliable numerical probability yet."];
+ if(last==="full"&&d.workload==="normal")return ["Encouraging evidence","Full practice and normal workload expectation recorded. Still verify official status."];
+ if(last==="DNP")return ["Needs monitoring","Latest practice recorded as DNP. Rest and injury absences have different meanings."];
+ if(last==="limited")return ["Workload uncertain","Latest practice was limited. Game availability does not guarantee normal usage."];
+ return ["Insufficient evidence","Add dated practice reports, official designation and source-backed comments."];
+}
+
 let db;
 try{db=JSON.parse(localStorage.getItem(KEY))||structuredClone(seed)}catch(e){db=JSON.parse(JSON.stringify(seed))}
 for(const l of ["eight","six"])if(!Array.isArray(db[l]))db[l]=JSON.parse(JSON.stringify(seed[l]));
@@ -62,11 +81,36 @@ $("saveplayer").onclick=savePlayer;$("canceledit").onclick=()=>{editIndex=-1;ren
 const order=["QB","RB","RB","WR","WR","TE","FLEX","D/ST","K",...(league==="six"?["IDP"]:[])];
 let used=new Set(),results=[];
 for(const pos of order){
-const candidates=a.map((p,i)=>({p,i})).filter(({p,i})=>!used.has(i)&&p[3]!=="IR"&&p[2]!==null&&!["OUT","BYE","IR"].includes((p[4]||"").toUpperCase())&&(pos==="FLEX"?["RB","WR","TE"].includes(p[1]):p[1]===pos)).sort((x,y)=>y.p[2]-x.p[2]);
+const candidates=a.map((p,i)=>({p,i})).filter(({p,i})=>!(["OUT","IR"].includes((getIntel(league,p[0]).designation||"").toUpperCase()))&&!used.has(i)&&p[3]!=="IR"&&p[2]!==null&&!["OUT","BYE","IR"].includes((p[4]||"").toUpperCase())&&(pos==="FLEX"?["RB","WR","TE"].includes(p[1]):p[1]===pos)).sort((x,y)=>y.p[2]-x.p[2]);
 const pick=candidates[0];if(pick)used.add(pick.i);results.push([pos,pick?.p]);
 }
-v.innerHTML="<h2>Lineup Coach — preliminary</h2><div class='note'>Projection-only suggestions, not an optimized or live recommendation. The tool cannot check injury updates, locked players, league-specific scoring, or whether ESPN has accepted a lineup change.</div>"+results.map(([pos,p])=>`<div class="player"><div class="details"><strong>${esc(pos)}: ${p?esc(p[0]):"No eligible player"}</strong><small>${p?fmt(p[2])+" projected pts"+(p[4]?" · "+esc(p[4]):""):""}</small></div></div>`).join("")+"<p class='muted'>A real coaching model with independent projections, availability checks, and lineup optimization is a future step.</p>";
-}else if(tab==="waivers"){
+v.innerHTML="<h2>Lineup Coach — preliminary</h2><div class='note'>Projection-only suggestions with manually recorded OUT/IR exclusions, not an optimized or live recommendation. The tool cannot check injury updates, locked players, league-specific scoring, or whether ESPN has accepted a lineup change.</div>"+results.map(([pos,p])=>`<div class="player"><div class="details"><strong>${esc(pos)}: ${p?esc(p[0]):"No eligible player"}</strong><small>${p?fmt(p[2])+" projected pts"+(p[4]?" · "+esc(p[4]):""):""}</small></div></div>`).join("")+"<p class='muted'>A real coaching model with independent projections, availability checks, and lineup optimization is a future step.</p>";
+}else if(tab==="injuries"){
+ const names=[...new Set(a.filter(p=>p[1]!=="D/ST"&&p[1]!=="K").map(p=>p[0]))].sort();
+ const selected=window.selectedIntelPlayer&&names.includes(window.selectedIntelPlayer)?window.selectedIntelPlayer:names[0];
+ window.selectedIntelPlayer=selected;
+ const d=getIntel(league,selected||"");const [verdict,reason]=evidenceAssessment(d);
+ const options=(values,current)=>values.map(([val,label])=>`<option value="${esc(val)}" ${val===(current||"")?"selected":""}>${esc(label)}</option>`).join("");
+ const practice=(day)=>`<label>${day} practice<select id="i${day}">${options([["","Unknown"],["DNP","Did not practice"],["limited","Limited"],["full","Full"],["rest","Rest / veteran day"]],d[day.toLowerCase()])}</select></label>`;
+ v.innerHTML=`<h2>🧠💨 The Farting Brain — Injury Intel</h2><div class="note"><strong>Manual scouting notebook, not live NFL data.</strong> Every field below is user-entered. The assessment is a transparent rule-based signal, NOT a calibrated playing probability. Check dates and sources.</div>
+ <label for="intelplayer">Player</label><select id="intelplayer" style="width:100%;margin:8px 0 16px">${names.map(n=>`<option ${n===selected?"selected":""}>${esc(n)}</option>`).join("")}</select>
+ <div class="formgrid"><label>Report date<input type="date" id="idate" value="${esc(d.date||"")}"></label>
+ <label>Official designation<select id="idesignation">${options([["","Not verified"],["HEALTHY","No designation"],["QUESTIONABLE","Questionable"],["DOUBTFUL","Doubtful"],["OUT","Out"],["IR","Injured reserve"]],d.designation)}</select></label>
+ ${practice("Wed")}${practice("Thu")}${practice("Fri")}
+ <label>New injury this week?<select id="inew">${options([["","Unknown"],["yes","Yes"],["no","No"]],d.newInjury)}</select></label>
+ <label>Expected workload<select id="iworkload">${options([["","Unknown"],["normal","Normal expected"],["limited","May be limited"],["unknown","Unclear"]],d.workload)}</select></label>
+ <label>Practice absence reason<select id="ireason">${options([["","Not established"],["rest","Reported veteran rest"],["injury","Reported injury"],["other","Other / unclear"]],d.reason)}</select></label></div>
+ <h3>Coach comments and evidence</h3><label for="icoach">What did the coach actually say? (quote or your notes)</label><textarea id="icoach" rows="3" style="width:100%;background:#17243a;color:white;border:1px solid #667e9d;border-radius:10px;padding:10px">${esc(d.coach||"")}</textarea>
+ <div class="formgrid"><label>Source / link<input id="isource" placeholder="Official team report, article URL..." value="${esc(d.source||"")}"></label><label>Source date<input type="date" id="isourcedate" value="${esc(d.sourceDate||"")}"></label></div>
+ <div class="toolbar"><button id="saveintel">Save scouting report</button><button id="clearintel" class="secondary">Clear this report</button></div>
+ <div class="note"><strong>Farting Brain assessment: ${esc(verdict)}</strong><p>${esc(reason)}</p><small>Last recorded report: ${esc(safeDate(d.date))}. ${d.workload==="limited"?"A player can be active but have a reduced workload.":"Availability and workload are separate questions."}</small></div>
+ <p class="muted">Next phase: connect verified data feeds, timestamps, opponent-specific matchups and measured probabilities. No fabricated 98% confidence scores.</p>`;
+ $("intelplayer").onchange=e=>{window.selectedIntelPlayer=e.target.value;render()};
+ $("saveintel").onclick=()=>{
+ const v=id=>$(id).value;
+ intel[intelKey(league,selected)]={date:v("idate"),designation:v("idesignation"),wed:v("iWed"),thu:v("iThu"),fri:v("iFri"),newInjury:v("inew"),workload:v("iworkload"),reason:v("ireason"),coach:v("icoach").trim(),source:v("isource").trim(),sourceDate:v("isourcedate")};saveIntel();render();alert("Scouting report saved on this device.")};
+ $("clearintel").onclick=()=>{if(confirm("Clear this player's scouting report?")){delete intel[intelKey(league,selected)];saveIntel();render()}};
+ }else if(tab==="waivers"){
 v.innerHTML="<h2>Waiver Watch</h2><div class='note'>Not connected to your ESPN free-agent pool. No fabricated waiver recommendations.</div><p>Next build: pull eligible free agents for the selected league, compare expected value, and identify who to drop.</p>";
 }else{
 v.innerHTML="<h2>Trade Desk</h2><div class='note'>Trade analysis is not live yet.</div><p>Next build: compare rest-of-season value, roster needs, league scoring, and injury risk before recommending a trade.</p>";
@@ -80,7 +124,7 @@ const p=[name,$("ppos").value,raw===""?null:Number(raw),$("pgroup").value,$("pst
 const a=db[$("league").value];if(editIndex>=0)a[editIndex]=p;else a.push(p);editIndex=-1;save();render();
 }
 function deletePlayer(){if(editIndex<0)return;if(!confirm("Delete this player from this device?"))return;db[$("league").value].splice(editIndex,1);editIndex=-1;save();render()}
-$("league").onchange=()=>{editIndex=-1;render()};
+$("league").onchange=()=>{editIndex=-1;window.selectedIntelPlayer=null;render()};
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;editIndex=-1;render()});
 render();
 </script></body></html>
