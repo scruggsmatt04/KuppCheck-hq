@@ -1,82 +1,86 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KuppCheck HQ</title>
 <style>
-body{font-family:Arial;background:#0b1220;color:white;margin:0;padding:18px}
-h1{color:#80b5ff}
-button,input,select{font-size:16px;padding:12px;border-radius:9px;margin:5px;border:1px solid #5d7799}
-button{background:#3776cf;color:white}
-input,select{background:#17243a;color:white;max-width:90%}
-.panel{background:#19263b;padding:15px;border-radius:14px;margin-top:15px}
-.player{padding:10px;border-bottom:1px solid #42536c}
-small{color:#bac8dc}
-</style>
-</head>
-<body>
-<h1>🏈 KuppCheck HQ</h1>
-<p>Your fantasy football command center</p>
-<select id="league" onchange="show()">
-<option value="eight">8-Bench League</option>
-<option value="six">6-Bench League</option>
-</select>
-<div>
-<button onclick="tab='roster';show()">My Roster</button>
-<button onclick="tab='coach';show()">Lineup Coach</button>
-<button onclick="tab='waivers';show()">Waivers</button>
-<button onclick="tab='trades';show()">Trades</button>
-</div>
-<div id="view" class="panel"></div>
-<script>
-var defaults={
-eight:[["Brock Purdy","QB",22.23],["Chuba Hubbard","RB",14.41],["Aaron Jones","RB",12.23],["Justin Jefferson","WR",18.46],["Germie Bernard","WR",13.36],["Mark Andrews","TE",8.11],["Tre Tucker","WR",10.43],["49ers","D/ST",4.1],["Will Reichard","K",11.55],["Emanuel Wilson","RB",10.64],["Seattle Seahawks","D/ST",4.76]],
-six:[["Bryce Young","QB",43.15],["Christian McCaffrey","RB",20],["Josh Jacobs","RB",18],["Christian Watson","WR",12],["Garrett Wilson","WR",14],["George Kittle","TE",12],["Isaiah Likely","TE",10],["Zack Baun","IDP",10],["Minnesota Vikings","D/ST",7],["Ka'imi Fairbairn","K",9]]
+:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:system-ui,-apple-system,Arial,sans-serif;background:#0b1220;color:#f4f7fc;margin:0;padding:16px;line-height:1.45}
+main{max-width:850px;margin:auto}h1{color:#8bb5ff;font-size:clamp(30px,6vw,44px);margin:12px 0 2px}h2{margin:0 0 12px}h3{margin:18px 0 8px}p{margin:8px 0 14px}.muted,small{color:#b8c8dd}.note{border-left:4px solid #e5b45b;padding:12px;background:#242a39;border-radius:8px;margin:14px 0}
+button,input,select{font:inherit;border-radius:10px;padding:11px;border:1px solid #667e9d;min-height:44px}
+button{background:#4277ca;color:#fff;cursor:pointer}button.secondary{background:#233650}button.danger{background:#71333b}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #ffcc66}
+select,input{background:#17243a;color:white;max-width:100%}.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0}.toolbar select{flex:1;min-width:200px}
+nav{display:flex;gap:7px;flex-wrap:wrap}nav button.active{background:#84b0f6;color:#0b1220;font-weight:750}
+.panel{background:#1a273c;padding:16px;border-radius:14px;margin:16px 0}.player{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid #43546d;padding:12px 0}.player:last-child{border-bottom:0}
+.player .details{min-width:0;flex:1}.player strong{display:block}.player small{display:block}.player button{flex-shrink:0}.tag{font-size:12px;padding:2px 7px;border-radius:6px;background:#354965;margin-right:5px}.status{color:#ffd184}
+.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.formgrid label{display:flex;flex-direction:column;gap:5px;font-size:14px}.formgrid input,.formgrid select{width:100%}
+@media(max-width:540px){.formgrid{grid-template-columns:1fr}.player button{padding:8px}.panel{padding:12px}}
+</style></head><body><main>
+<h1>🏈 KuppCheck HQ</h1><p>Your fantasy football command center</p>
+<div class="note"><strong>Version 2 — snapshot mode.</strong> These rosters were entered from your ESPN screenshots, not synced live. Injury statuses and projections may change. Always verify with ESPN before setting a lineup.</div>
+<div class="toolbar"><label for="league">League</label><select id="league"><option value="eight">Short Stack Cup · 8-bench</option><option value="six">Mutant football · 6-bench</option></select></div>
+<nav aria-label="App sections"><button data-tab="roster" class="active">My Roster</button><button data-tab="coach">Lineup Coach</button><button data-tab="waivers">Waivers</button><button data-tab="trades">Trades</button></nav>
+<div id="view" class="panel" aria-live="polite"></div>
+<p class="muted"><small>Data is saved on this device only. Clearing website data or changing browsers can remove edits. No ESPN password or private cookies are required.</small></p>
+</main><script>
+"use strict";
+const seed={
+eight:[
+["Brock Purdy","QB",22.24,"starter"],["Chuba Hubbard","RB",14.41,"starter"],["Aaron Jones Sr.","RB",12.23,"starter"],["Germie Bernard","WR",8.69,"starter"],["Justin Jefferson","WR",18.46,"starter"],["Mark Andrews","TE",8.11,"starter"],["Tre Tucker","WR",10.43,"starter"],["49ers D/ST","D/ST",4.11,"starter"],["Will Reichard","K",11.55,"starter"],
+["Stefon Diggs","WR",null,"bench","BYE"],["Mike Evans","WR",0,"bench","OUT"],["Hunter Henry","TE",8.15,"bench"],["Deebo Samuel Sr.","WR",0,"bench","OUT"],["Cam Skattebo","RB",7.73,"bench"],["Tyler Warren","TE",0,"bench","OUT"],["Emanuel Wilson","RB",10.64,"bench"],["Seahawks D/ST","D/ST",4.76,"bench"],["Davante Adams","WR",0,"IR","IR"],["Tyreek Hill","WR",null,"IR","QUESTIONABLE"]],
+six:[
+["Bryce Young","QB",43.15,"starter"],["Josh Jacobs","RB",12.14,"starter","DTD"],["Christian McCaffrey","RB",21.58,"starter"],["Christian Watson","WR",16.13,"starter"],["Garrett Wilson","WR",14.64,"starter"],["George Kittle","TE",16.69,"starter"],["Isaiah Likely","TE",14.25,"starter"],["Azeez Al-Shaair","IDP",20.82,"starter"],["Vikings D/ST","D/ST",7.78,"starter"],["Ka'imi Fairbairn","K",9.19,"starter"],
+["Jordan Addison","WR",10.43,"bench"],["Zack Baun","IDP",20.46,"bench"],["James Cook III","RB",null,"bench","BYE"],["Tyreek Hill","WR",null,"bench","QUESTIONABLE"],["Alvin Kamara","RB",7.26,"bench","LOCKED"],["Kendre Miller","RB",8.73,"bench","LOCKED"],["Deebo Samuel Sr.","WR",0,"IR","OUT"]]
 };
-var data;
-try{data=JSON.parse(localStorage.getItem('kuppcheck-data'))||defaults}catch(e){data=defaults}
-var tab='roster';
-function save(){localStorage.setItem('kuppcheck-data',JSON.stringify(data))}
-function safe(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
-function show(){
-var l=document.getElementById('league').value;
-var a=data[l],v=document.getElementById('view');
-if(tab==='roster'){
-v.innerHTML='<h2>My Roster</h2>'+a.map(function(p,i){return '<div class="player">'+safe(p[0])+' · '+safe(p[1])+' · '+p[2]+' pts <button onclick="edit('+i+')">Edit</button></div>'}).join('')+
-'<h2 id="formtitle">Add Player</h2><input id="name" placeholder="Player name"><select id="position"><option>QB</option><option>RB</option><option>WR</option><option>TE</option><option>D/ST</option><option>K</option><option>IDP</option></select><input id="points" type="number" placeholder="Projected points"><input id="editindex" type="hidden" value="-1"><p><button onclick="add()">Save Player</button></p>';
-}else if(tab==='coach'){
-var order=['QB','RB','RB','WR','WR','TE','FLEX','D/ST','K'];
-if(l==='six')order.push('IDP');
-var used=[];
-v.innerHTML='<h2>Suggested Lineup</h2><small>Based on manually entered projections.</small>'+order.map(function(pos){
-var options=a.map(function(p,i){return {p:p,i:i}}).filter(function(x){return !used.includes(x.i)&&(pos==='FLEX'?['RB','WR','TE'].includes(x.p[1]):x.p[1]===pos)}).sort(function(x,y){return y.p[2]-x.p[2]});
-var x=options[0];if(x)used.push(x.i);
-return '<div class="player">'+pos+': '+(x?safe(x.p[0])+' ('+x.p[2]+' pts)':'No player')+'</div>';
-}).join('');
-}else if(tab==='waivers'){
-v.innerHTML='<h2>Waiver Watch</h2><p>Bam Knight · Tyrone Tracy Jr. · Keenan Allen</p><small>Examples only. Not connected to ESPN.</small>';
+const KEY="kuppcheck-v2";
+let db;
+try{db=JSON.parse(localStorage.getItem(KEY))||structuredClone(seed)}catch(e){db=JSON.parse(JSON.stringify(seed))}
+for(const l of ["eight","six"])if(!Array.isArray(db[l]))db[l]=JSON.parse(JSON.stringify(seed[l]));
+let tab="roster",editIndex=-1;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt=n=>n===null||n===undefined?"—":Number(n).toFixed(2);
+function save(){try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){alert("Could not save on this device.")}}
+function render(){
+const league=$("league").value, a=db[league], v=$("view");
+document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));
+if(tab==="roster"){
+let out="<h2>My Roster</h2><p class='muted'>Snapshot from screenshots. Use Edit to correct a player, position, or projection.</p>";
+for(const [slot,title] of [["starter","Starters"],["bench","Bench"],["IR","Injured reserve"]]){
+out+="<h3>"+title+"</h3>";
+const players=a.map((p,i)=>({p,i})).filter(x=>x.p[3]===slot);
+out+=players.length?players.map(({p,i})=>`<div class="player"><div class="details"><strong>${esc(p[0])}</strong><small><span class="tag">${esc(p[1])}</span> ${fmt(p[2])} projected pts ${p[4]?`<span class="status">· ${esc(p[4])}</span>`:""}</small></div><button data-edit="${i}">Edit</button></div>`).join(""):"<p class='muted'>No players listed.</p>";
+}
+out+=`<h3 id="formtitle">Add player</h3><div class="formgrid">
+<label>Name<input id="pname" placeholder="Player name"></label>
+<label>Position<select id="ppos">${["QB","RB","WR","TE","D/ST","K","IDP"].map(x=>`<option>${x}</option>`).join("")}</select></label>
+<label>Projected points (blank if unknown)<input id="ppoints" type="number" step=".01" placeholder="Unknown"></label>
+<label>Roster group<select id="pgroup"><option value="starter">Starter</option><option value="bench">Bench</option><option value="IR">IR</option></select></label>
+<label>Status (optional)<input id="pstatus" placeholder="e.g. OUT, BYE"></label></div>
+<div class="toolbar"><button id="saveplayer">Save player</button><button id="canceledit" class="secondary" hidden>Cancel edit</button><button id="deleteplayer" class="danger" hidden>Delete player</button></div>`;
+v.innerHTML=out;
+v.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>editPlayer(Number(b.dataset.edit))));
+$("saveplayer").onclick=savePlayer;$("canceledit").onclick=()=>{editIndex=-1;render()};$("deleteplayer").onclick=deletePlayer;
+}else if(tab==="coach"){
+const order=["QB","RB","RB","WR","WR","TE","FLEX","D/ST","K",...(league==="six"?["IDP"]:[])];
+let used=new Set(),results=[];
+for(const pos of order){
+const candidates=a.map((p,i)=>({p,i})).filter(({p,i})=>!used.has(i)&&p[3]!=="IR"&&p[2]!==null&&!["OUT","BYE","IR"].includes((p[4]||"").toUpperCase())&&(pos==="FLEX"?["RB","WR","TE"].includes(p[1]):p[1]===pos)).sort((x,y)=>y.p[2]-x.p[2]);
+const pick=candidates[0];if(pick)used.add(pick.i);results.push([pos,pick?.p]);
+}
+v.innerHTML="<h2>Lineup Coach — preliminary</h2><div class='note'>Projection-only suggestions, not an optimized or live recommendation. The tool cannot check injury updates, locked players, league-specific scoring, or whether ESPN has accepted a lineup change.</div>"+results.map(([pos,p])=>`<div class="player"><div class="details"><strong>${esc(pos)}: ${p?esc(p[0]):"No eligible player"}</strong><small>${p?fmt(p[2])+" projected pts"+(p[4]?" · "+esc(p[4]):""):""}</small></div></div>`).join("")+"<p class='muted'>A real coaching model with independent projections, availability checks, and lineup optimization is a future step.</p>";
+}else if(tab==="waivers"){
+v.innerHTML="<h2>Waiver Watch</h2><div class='note'>Not connected to your ESPN free-agent pool. No fabricated waiver recommendations.</div><p>Next build: pull eligible free agents for the selected league, compare expected value, and identify who to drop.</p>";
 }else{
-v.innerHTML='<h2>Trade Desk</h2><p>Trade analysis coming next.</p><small>No ESPN connection yet.</small>';
+v.innerHTML="<h2>Trade Desk</h2><div class='note'>Trade analysis is not live yet.</div><p>Next build: compare rest-of-season value, roster needs, league scoring, and injury risk before recommending a trade.</p>";
 }}
-function edit(i){
-var p=data[document.getElementById('league').value][i];
-document.getElementById('name').value=p[0];
-document.getElementById('position').value=p[1];
-document.getElementById('points').value=p[2];
-document.getElementById('editindex').value=i;
-document.getElementById('formtitle').textContent='Edit Player';
+function editPlayer(i){
+editIndex=i;const p=db[$("league").value][i];$("pname").value=p[0];$("ppos").value=p[1];$("ppoints").value=p[2]??"";$("pgroup").value=p[3];$("pstatus").value=p[4]||"";$("formtitle").textContent="Edit player";$("canceledit").hidden=false;$("deleteplayer").hidden=false;$("formtitle").scrollIntoView({behavior:"smooth"});
 }
-function add(){
-var name=document.getElementById('name').value.trim();
-if(!name){alert('Enter a player name');return}
-var l=document.getElementById('league').value;
-var p=[name,document.getElementById('position').value,Number(document.getElementById('points').value)||0];
-var i=Number(document.getElementById('editindex').value);
-if(i>=0)data[l][i]=p;else data[l].push(p);
-save();show();
+function savePlayer(){
+const name=$("pname").value.trim(),raw=$("ppoints").value.trim();if(!name){alert("Enter a player name.");return}
+const p=[name,$("ppos").value,raw===""?null:Number(raw),$("pgroup").value,$("pstatus").value.trim()];
+const a=db[$("league").value];if(editIndex>=0)a[editIndex]=p;else a.push(p);editIndex=-1;save();render();
 }
-show();
-</script>
-</body>
-</html>
+function deletePlayer(){if(editIndex<0)return;if(!confirm("Delete this player from this device?"))return;db[$("league").value].splice(editIndex,1);editIndex=-1;save();render()}
+$("league").onchange=()=>{editIndex=-1;render()};
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;editIndex=-1;render()});
+render();
+</script></body></html>
